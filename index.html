@@ -77,16 +77,16 @@ const incidentIcon = L.icon({
   popupAnchor:[0,-30]
 });
 
-// 🚔 순찰차 아이콘 → 파란색 경광등 경찰차
+// 🚔 순찰차 아이콘 → 경광등 포함된 경찰차 이미지 사용
 const patrolIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/1995/1995470.png", // 파란색 경광등 경찰차 아이콘
-  iconSize: [34, 34],   // 크기 (필요시 조정)
-  iconAnchor: [17, 34], // 기준점 (중앙 하단)
-  popupAnchor: [0, -28] // 팝업 위치
+  iconUrl: "https://example.com/icons/police_car_siren_blue.png", // 여기 실제 경광등 경찰차 이미지 URL로 바꿔주세요
+  iconSize: [40, 40],     // 크기 조절 가능
+  iconAnchor: [20, 40],   // 마커 기준 하단 중앙
+  popupAnchor: [0, -30]   // 팝업 위치
 });
 
 // 상태
-let mode = null; // null = 아무 모드 아님, "incident" = 사건 모드, "patrol" = 순찰차 모드
+let mode = null; 
 let incidentMarker = null;
 let patrolMarkers = [];
 let routingControl = null;
