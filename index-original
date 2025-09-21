@@ -9,7 +9,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
 <style>
-  #map { height: 90vh; }
+  #map { height: 85vh; }
   #controls { padding: 10px; text-align:center; }
   button, input { margin: 5px; padding: 6px 10px; font-size:14px; }
 </style>
@@ -22,10 +22,14 @@
   <button onclick="downloadJSON()">💾 JSON 저장</button>
   <input type="file" id="fileInput" accept=".json" />
   <button onclick="selectPatrolForRouting()">🛣️ 순찰차 찾기</button>
+  <button onclick="resetIncident()">🗑️ 사건 초기화</button>
+  <button onclick="resetPatrols()">🗑️ 순찰차 초기화</button>
 </div>
 <div id="map"></div>
 
 <script>
+const PASSWORD = "knp123";
+
 let map = L.map('map').setView([37.5665, 126.9780], 13);
 
 // 타일
@@ -55,6 +59,11 @@ let routingControl = null;
 
 // 모드 선택
 function setMode(m){
+  let pw = prompt("비밀번호를 입력하세요:");
+  if(pw !== PASSWORD){
+    alert("비밀번호가 틀렸습니다.");
+    return;
+  }
   mode = m;
   alert(m === 'incident' ? "사건 위치 클릭" : "순찰차 배치 클릭");
 }
@@ -158,6 +167,34 @@ function selectPatrolForRouting(){
   }, ()=>{
     alert("현재 위치를 가져올 수 없습니다. GPS를 켜주세요.");
   });
+}
+
+// 사건 초기화
+function resetIncident(){
+  let pw = prompt("사건 초기화 비밀번호 입력:");
+  if(pw !== PASSWORD){
+    alert("비밀번호가 틀렸습니다.");
+    return;
+  }
+  if(incidentMarker){
+    map.removeLayer(incidentMarker);
+    incidentMarker = null;
+    alert("사건 위치가 초기화되었습니다.");
+  } else {
+    alert("초기화할 사건 위치가 없습니다.");
+  }
+}
+
+// 순찰차 초기화
+function resetPatrols(){
+  let pw = prompt("순찰차 초기화 비밀번호 입력:");
+  if(pw !== PASSWORD){
+    alert("비밀번호가 틀렸습니다.");
+    return;
+  }
+  patrolMarkers.forEach(p=>map.removeLayer(p.marker));
+  patrolMarkers = [];
+  alert("모든 순찰차 위치가 초기화되었습니다.");
 }
 </script>
 </body>
