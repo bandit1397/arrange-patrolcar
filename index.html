@@ -88,33 +88,44 @@ function downloadJSON(){
   URL.revokeObjectURL(a.href);
 }
 
-// JSON 불러오기
+// JSON 불러오기 (파일 선택)
 document.getElementById('fileInput').addEventListener('change',function(evt){
   let file = evt.target.files[0];
   if(!file) return;
   let reader = new FileReader();
   reader.onload = function(e){
-    let data = JSON.parse(e.target.result);
-
-    // 초기화
-    if(incidentMarker) map.removeLayer(incidentMarker);
-    patrolMarkers.forEach(p=>map.removeLayer(p.marker));
-    patrolMarkers = [];
-
-    if(data.incident){
-      const ll = [data.incident.lat, data.incident.lng];
-      incidentMarker = L.marker(ll,{icon:incidentIcon}).bindPopup("사건 위치").addTo(map);
-    }
-    if(data.patrols){
-      data.patrols.forEach(p=>{
-        const ll = [p.latlng.lat, p.latlng.lng];
-        let m = L.marker(ll,{icon:patrolIcon}).bindPopup("순찰차 "+p.num).addTo(map);
-        patrolMarkers.push({marker:m,num:p.num});
-      });
-    }
+    loadLocations(JSON.parse(e.target.result));
   };
   reader.readAsText(file);
 });
+
+// JSON 자동 로드 (GitHub Pages)
+fetch("locations.json")
+  .then(res => res.json())
+  .then(data => loadLocations(data))
+  .catch(err => console.log("locations.json 로드 실패:", err));
+
+function loadLocations(data){
+  // 초기화
+  if(incidentMarker) map.removeLayer(incidentMarker);
+  patrolMarkers.forEach(p=>map.removeLayer(p.marker));
+  patrolMarkers = [];
+
+  // 사건 위치
+  if(data.incident){
+    const ll = [data.incident.lat, data.incident.lng];
+    incidentMarker = L.marker(ll,{icon:incidentIcon}).bindPopup("사건 위치").addTo(map);
+  }
+
+  // 순찰차 위치
+  if(data.patrols){
+    data.patrols.forEach(p=>{
+      const ll = [p.latlng.lat, p.latlng.lng];
+      let m = L.marker(ll,{icon:patrolIcon}).bindPopup("순찰차 "+p.num).addTo(map);
+      patrolMarkers.push({marker:m,num:p.num});
+    });
+  }
+}
 
 // 순찰차 선택 후 길찾기
 function selectPatrolForRouting(){
