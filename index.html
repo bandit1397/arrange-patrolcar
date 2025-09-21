@@ -77,8 +77,8 @@ map.on('click', function(e){
 // JSON 저장
 function downloadJSON(){
   let data = {
-    incident: incidentMarker ? incidentMarker.getLatLng() : null,
-    patrols: patrolMarkers.map(p=>({num:p.num, latlng:p.marker.getLatLng()}))
+    incident: incidentMarker ? {lat: incidentMarker.getLatLng().lat, lng: incidentMarker.getLatLng().lng} : null,
+    patrols: patrolMarkers.map(p=>({num:p.num, latlng:{lat:p.marker.getLatLng().lat, lng:p.marker.getLatLng().lng}}))
   };
   let blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   let a = document.createElement("a");
@@ -102,11 +102,13 @@ document.getElementById('fileInput').addEventListener('change',function(evt){
     patrolMarkers = [];
 
     if(data.incident){
-      incidentMarker = L.marker(data.incident,{icon:incidentIcon}).bindPopup("사건 위치").addTo(map);
+      const ll = [data.incident.lat, data.incident.lng];
+      incidentMarker = L.marker(ll,{icon:incidentIcon}).bindPopup("사건 위치").addTo(map);
     }
     if(data.patrols){
       data.patrols.forEach(p=>{
-        let m = L.marker(p.latlng,{icon:patrolIcon}).bindPopup("순찰차 "+p.num).addTo(map);
+        const ll = [p.latlng.lat, p.latlng.lng];
+        let m = L.marker(ll,{icon:patrolIcon}).bindPopup("순찰차 "+p.num).addTo(map);
         patrolMarkers.push({marker:m,num:p.num});
       });
     }
