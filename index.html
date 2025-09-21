@@ -129,11 +129,10 @@ function loadLocations(data){
 
 // 순찰차 선택 후 길찾기
 function selectPatrolForRouting(){
-  if(!incidentMarker){
-    alert("먼저 사건 위치를 찍어주세요!");
-    return;
-  }
   let patrolNum = prompt("길찾기할 순찰차 번호 입력:");
+  let targetLat = parseFloat(prompt("목표 지점 위도 입력:"));
+  let targetLng = parseFloat(prompt("목표 지점 경도 입력:"));
+
   let p = patrolMarkers.find(x=>x.num===patrolNum);
   if(!p){
     alert("입력한 번호의 순찰차가 없습니다.");
@@ -141,7 +140,7 @@ function selectPatrolForRouting(){
   }
   if(routingControl) map.removeControl(routingControl);
   routingControl = L.Routing.control({
-    waypoints:[p.marker.getLatLng(), incidentMarker.getLatLng()],
+    waypoints:[p.marker.getLatLng(), L.latLng(targetLat,targetLng)],
     routeWhileDragging:true
   }).addTo(map);
 }
