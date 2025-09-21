@@ -2,135 +2,81 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>사건/순찰차 위치 저장 & 불러오기 툴</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>사건/순찰차 배치 시뮬레이션</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  body { margin:0; padding:0; }
-  #map { width:100%; height:90vh; }
-  #controls { padding:10px; text-align:center; }
-  button { margin: 5px; padding: 8px 12px; font-size:14px; }
-  input[type=file] { margin: 5px; }
+  #map { height: 100vh; }
+  .custom-label {
+    background: white;
+    padding: 2px 5px;
+    border: 1px solid black;
+    border-radius: 4px;
+    font-size: 12px;
+  }
 </style>
 </head>
 <body>
-<div id="controls">
-  <button onclick="setMode('incident')">📍 사건 위치 찍기</button>
-  <button onclick="setMode('car')">🚔 순찰차 위치 찍기</button>
-  <button onclick="downloadJSON()">💾 JSON 다운로드</button>
-  <input type="file" id="fileInput" accept=".json" />
-</div>
 <div id="map"></div>
-
 <script>
-let map = L.map('map').setView([37.5665, 126.9780], 13); // 서울시청 기준
+// 지도 초기화
+const map = L.map('map').setView([37.5665, 126.9780], 13);
+
+// 타일 레이어
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19
+  attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 
-let mode = null;
-let incidentMarkers = [];
-let carMarkers = [];
+// 아이콘 설정
+const patrolIcon = L.icon({
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/296/296216.png", // 🚓 아이콘 (무료 PNG)
+  iconSize: [40, 40],
+  iconAnchor: [20, 40],
+  popupAnchor: [0, -35]
+});
 
-// 📌 모드 설정
-function setMode(type){
-  mode = type;
-  alert(type === 'incident' ? "사건 위치를 지도에 클릭하세요." : "순찰차 위치를 지도에 클릭하세요.");
-}
+const incidentIcon = L.icon({
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/463/463574.png", // ❗ 사건 아이콘
+  iconSize: [35, 35],
+  iconAnchor: [17, 35],
+  popupAnchor: [0, -30]
+});
 
-// 📌 지도 클릭 시 마커 추가
-map.on('click', function(e){
-  if(!mode) return;
-  
-  let marker;
-  if(mode === 'incident'){
-    marker = L.marker(e.latlng, {draggable:true}).addTo(map).bindPopup("사건 위치");
-    incidentMarkers.push(marker);
-  } else if(mode === 'car'){
-    marker = L.marker(e.latlng, {draggable:true, icon: L.icon({
-      iconUrl: "https://cdn-icons-png.flaticon.com/512/68/68557.png",
-      iconSize: [32,32]
-    })}).addTo(map).bindPopup("순찰차 위치");
-    carMarkers.push(marker);
+// 상태
+let mode = "incident"; // 기본 모드: 사건 추가
+let incidentMarker = null;
+let patrolMarkers = [];
+
+// 지도 클릭 이벤트
+map.on("click", function(e) {
+  if (mode === "incident") {
+    if (incidentMarker) map.removeLayer(incidentMarker);
+    incidentMarker = L.marker(e.latlng, {icon: incidentIcon})
+      .bindPopup("사건 위치")
+      .addTo(map);
+  } else if (mode === "patrol") {
+    let patrolNum = prompt("순찰차 번호를 입력하세요:", "101");
+    if (patrolNum) {
+      let marker = L.marker(e.latlng, {icon: patrolIcon})
+        .bindPopup("순찰차 " + patrolNum)
+        .addTo(map);
+      patrolMarkers.push({marker, num: patrolNum});
+    }
   }
 });
 
-// 📌 JSON 다운로드
-function downloadJSON(){
-  let data = {
-    incidents: incidentMarkers.map(m => m.getLatLng()),
-    cars: carMarkers.map(m => m.getLatLng())
-  };
-  let blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-  let url = URL.createObjectURL(blob);
-  let a = document.createElement("a");
-  a.href = url;
-  a.download = "locations.json";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// 📌 JSON 수동 불러오기
-document.getElementById('fileInput').addEventListener('change', function(evt){
-  let file = evt.target.files[0];
-  if(!file) return;
-
-  let reader = new FileReader();
-  reader.onload = function(e){
-    let data = JSON.parse(e.target.result);
-    loadLocations(data);
-  };
-  reader.readAsText(file);
+// 키보드 단축키
+document.addEventListener("keydown", function(e) {
+  if (e.key === "1") {
+    mode = "incident";
+    alert("사건 위치 모드");
+  }
+  if (e.key === "2") {
+    mode = "patrol";
+    alert("순찰차 배치 모드");
+  }
 });
-
-// 📌 공통 로드 함수
-function loadLocations(data){
-  // 기존 마커 제거
-  incidentMarkers.forEach(m => map.removeLayer(m));
-  carMarkers.forEach(m => map.removeLayer(m));
-  incidentMarkers = [];
-  carMarkers = [];
-
-  // 사건 위치 로드
-  if(data.incidents){
-    data.incidents.forEach(loc => {
-      let marker = L.marker(loc, {draggable:true}).addTo(map).bindPopup("사건 위치");
-      incidentMarkers.push(marker);
-    });
-  }
-
-  // 순찰차 위치 로드
-  if(data.cars){
-    data.cars.forEach(loc => {
-      let marker = L.marker(loc, {draggable:true, icon: L.icon({
-        iconUrl: "https://cdn-icons-png.flaticon.com/512/68/68557.png",
-        iconSize: [32,32]
-      })}).addTo(map).bindPopup("순찰차 위치");
-      carMarkers.push(marker);
-    });
-  }
-
-  // 지도의 중심을 사건/순찰차 위치 평균으로 맞춤
-  let all = [...incidentMarkers, ...carMarkers];
-  if(all.length > 0){
-    let group = L.featureGroup(all);
-    map.fitBounds(group.getBounds().pad(0.3));
-  }
-}
-
-// 📌 페이지 로딩 시 locations.json 자동 불러오기
-fetch('locations.json')
-  .then(response => {
-    if(!response.ok) throw new Error("파일 없음");
-    return response.json();
-  })
-  .then(data => {
-    loadLocations(data);
-  })
-  .catch(err => {
-    console.log("자동 불러오기 실패:", err.message);
-  });
 </script>
 </body>
 </html>
