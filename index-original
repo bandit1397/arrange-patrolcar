@@ -70,11 +70,22 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 }).addTo(map);
 
 // 아이콘
-const incidentIcon = L.icon({iconUrl:"https://cdn-icons-png.flaticon.com/512/463/463574.png",iconSize:[35,35],iconAnchor:[17,35],popupAnchor:[0,-30]});
-const patrolIcon = L.icon({iconUrl:"https://cdn-icons-png.flaticon.com/512/296/296216.png",iconSize:[40,40],iconAnchor:[20,40],popupAnchor:[0,-35]});
+const incidentIcon = L.icon({
+  iconUrl:"https://cdn-icons-png.flaticon.com/512/463/463574.png",
+  iconSize:[35,35],
+  iconAnchor:[17,35],
+  popupAnchor:[0,-30]
+});
 
+// 🚔 순찰차 아이콘 → 경광등 포함된 경찰차 이미지 사용
+const patrolIcon = L.icon({
+  iconUrl: "https://raw.githubusercontent.com/bandit1397/patrolcar_image/main/patrol_car.png", // 경광등 있는 경찰차
+  iconSize: [45, 22.5],     // 원본 비율 유지, 전체 크기 반으로 축소
+  iconAnchor: [22.5, 22.5], // 하단 중앙 위치 비례 조정
+  popupAnchor: [0, -22.5]   // 팝업 위치도 비례로 조정
+});
 // 상태
-let mode = null; // null = 아무 모드 아님, "incident" = 사건 모드, "patrol" = 순찰차 모드
+let mode = null; 
 let incidentMarker = null;
 let patrolMarkers = [];
 let routingControl = null;
@@ -173,7 +184,6 @@ function selectPatrolForRouting(){
   navigator.geolocation.getCurrentPosition(pos=>{
     const userLat = pos.coords.latitude;
     const userLng = pos.coords.longitude;
-
     const destLat = p.marker.getLatLng().lat;
     const destLng = p.marker.getLatLng().lng;
 
@@ -184,7 +194,6 @@ function selectPatrolForRouting(){
     alert("현재 위치를 가져올 수 없습니다. GPS를 켜주세요.");
   });
 }
-
 
 // 사건 초기화
 function resetIncident(){
