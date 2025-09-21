@@ -43,7 +43,7 @@
 
 <div id="controls">
   <!-- 사건 관련 -->
-  <button onclick="setMode('incident')">📍 사건 위치 찍기</button>
+  <button onclick="enableIncidentMode()">📍 사건 위치 찍기</button>
   <button onclick="resetIncident()">🗑️ 사건 초기화</button>
 
   <!-- 순찰차 관련 -->
@@ -74,17 +74,25 @@ const incidentIcon = L.icon({iconUrl:"https://cdn-icons-png.flaticon.com/512/463
 const patrolIcon = L.icon({iconUrl:"https://cdn-icons-png.flaticon.com/512/296/296216.png",iconSize:[40,40],iconAnchor:[20,40],popupAnchor:[0,-35]});
 
 // 상태
-let mode = "incident";
+let mode = null; // null = 아무 모드 아님, "incident" = 사건 모드, "patrol" = 순찰차 모드
 let incidentMarker = null;
 let patrolMarkers = [];
 let routingControl = null;
 
-// 모드 선택
+// 사건 위치 찍기 활성화
+function enableIncidentMode(){
+  let pw = prompt("비밀번호를 입력하세요:");
+  if(pw !== PASSWORD){ alert("비밀번호가 틀렸습니다."); return; }
+  mode = "incident";
+  alert("지도에서 사건 위치를 클릭하세요.");
+}
+
+// 모드 선택 (순찰차)
 function setMode(m){
   let pw = prompt("비밀번호를 입력하세요:");
   if(pw !== PASSWORD){ alert("비밀번호가 틀렸습니다."); return; }
   mode = m;
-  alert(m === 'incident' ? "사건 위치 클릭" : "순찰차 배치 클릭");
+  if(m === 'patrol') alert("지도에서 순찰차를 배치할 위치를 클릭하세요.");
 }
 
 // 지도 클릭
@@ -92,6 +100,7 @@ map.on('click', function(e){
   if(mode === 'incident'){
     if(incidentMarker) map.removeLayer(incidentMarker);
     incidentMarker = L.marker(e.latlng, {icon: incidentIcon}).bindPopup("사건 위치").addTo(map);
+    mode = null; // 한번 지정 후 사건 모드 종료
   }
   else if(mode === 'patrol'){
     let num = prompt("순찰차 번호 입력", "101");
