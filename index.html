@@ -7,17 +7,15 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  #map { height: 100vh; }
-  .custom-label {
-    background: white;
-    padding: 2px 5px;
-    border: 1px solid black;
-    border-radius: 4px;
-    font-size: 12px;
-  }
+  #map { height: 90vh; }
+  #controls { padding: 10px; }
 </style>
 </head>
 <body>
+<div id="controls">
+  <button onclick="downloadJSON()">📥 JSON 저장</button>
+  <input type="file" id="fileInput" accept=".json">
+</div>
 <div id="map"></div>
 <script>
 // 지도 초기화
@@ -30,21 +28,21 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 // 아이콘 설정
 const patrolIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/296/296216.png", // 🚓 아이콘 (무료 PNG)
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/296/296216.png", // 🚓
   iconSize: [40, 40],
   iconAnchor: [20, 40],
   popupAnchor: [0, -35]
 });
 
 const incidentIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/463/463574.png", // ❗ 사건 아이콘
+  iconUrl: "https://cdn-icons-png.flaticon.com/512/463/463574.png", // ❗
   iconSize: [35, 35],
   iconAnchor: [17, 35],
   popupAnchor: [0, -30]
 });
 
 // 상태
-let mode = "incident"; // 기본 모드: 사건 추가
+let mode = "incident"; 
 let incidentMarker = null;
 let patrolMarkers = [];
 
@@ -64,6 +62,57 @@ map.on("click", function(e) {
       patrolMarkers.push({marker, num: patrolNum});
     }
   }
+});
+
+// JSON 저장
+function downloadJSON() {
+  let data = {
+    incident: incidentMarker ? incidentMarker.getLatLng() : null,
+    patrols: patrolMarkers.map(p => ({
+      latlng: p.marker.getLatLng(),
+      num: p.num
+    }))
+  };
+  let blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement("a");
+  a.href = url;
+  a.download = "map_data.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// JSON 불러오기
+document.getElementById("fileInput").addEventListener("change", function(evt) {
+  let file = evt.target.files[0];
+  if (!file) return;
+  let reader = new FileReader();
+  reader.onload = function(e) {
+    let data = JSON.parse(e.target.result);
+
+    // 기존 마커 초기화
+    if (incidentMarker) map.removeLayer(incidentMarker);
+    patrolMarkers.forEach(p => map.removeLayer(p.marker));
+    patrolMarkers = [];
+
+    // 사건 위치 표시
+    if (data.incident) {
+      incidentMarker = L.marker(data.incident, {icon: incidentIcon})
+        .bindPopup("사건 위치")
+        .addTo(map);
+    }
+
+    // 순찰차 표시
+    if (data.patrols) {
+      data.patrols.forEach(p => {
+        let marker = L.marker(p.latlng, {icon: patrolIcon})
+          .bindPopup("순찰차 " + p.num)
+          .addTo(map);
+        patrolMarkers.push({marker, num: p.num});
+      });
+    }
+  };
+  reader.readAsText(file);
 });
 
 // 키보드 단축키
