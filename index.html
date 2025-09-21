@@ -80,11 +80,10 @@ const incidentIcon = L.icon({
 // 🚔 순찰차 아이콘 → 경광등 포함된 경찰차 이미지 사용
 const patrolIcon = L.icon({
   iconUrl: "https://raw.githubusercontent.com/bandit1397/patrolcar_image/main/patrol_car.png", // 경광등 있는 경찰차
-  iconSize: [45, 45],     // 크기 키움
-  iconAnchor: [22, 45],   // 하단 중앙 고정
-  popupAnchor: [0, -40]   // 팝업 위치 위로
+  iconSize: [90, 45],      // 원본 비율 2:1 유지, 선명하게 표시
+  iconAnchor: [45, 45],    // 아이콘 하단 중앙에 맞춤
+  popupAnchor: [0, -45]    // 팝업이 아이콘 위쪽에 오도록
 });
-
 // 상태
 let mode = null; 
 let incidentMarker = null;
