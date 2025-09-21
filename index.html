@@ -21,7 +21,7 @@
   <button onclick="setMode('patrol')">🚔 순찰차 위치 찍기</button>
   <button onclick="downloadJSON()">💾 JSON 저장</button>
   <input type="file" id="fileInput" accept=".json" />
-  <button onclick="selectPatrolForRouting()">🛣️ 길찾기 모드</button>
+  <button onclick="selectPatrolForRouting()">🛣️ 순찰차 찾기</button>
 </div>
 <div id="map"></div>
 
@@ -127,22 +127,37 @@ function loadLocations(data){
   }
 }
 
-// 순찰차 선택 후 길찾기
+// 순찰차 선택 후 길찾기 (사용자 위치 → 배치 순찰차 위치)
 function selectPatrolForRouting(){
-  let patrolNum = prompt("길찾기할 순찰차 번호 입력:");
-  let targetLat = parseFloat(prompt("목표 지점 위도 입력:"));
-  let targetLng = parseFloat(prompt("목표 지점 경도 입력:"));
+  if(patrolMarkers.length === 0){
+    alert("순찰차가 배치되어 있지 않습니다!");
+    return;
+  }
 
+  let patrolNum = prompt("길찾기할 순찰차 번호 입력:");
   let p = patrolMarkers.find(x=>x.num===patrolNum);
   if(!p){
     alert("입력한 번호의 순찰차가 없습니다.");
     return;
   }
-  if(routingControl) map.removeControl(routingControl);
-  routingControl = L.Routing.control({
-    waypoints:[p.marker.getLatLng(), L.latLng(targetLat,targetLng)],
-    routeWhileDragging:true
-  }).addTo(map);
+
+  // 현재 위치 확인
+  if (!navigator.geolocation) {
+    alert("GPS를 사용할 수 없습니다.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const userLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+
+    if(routingControl) map.removeControl(routingControl);
+    routingControl = L.Routing.control({
+      waypoints:[userLatLng, p.marker.getLatLng()],
+      routeWhileDragging:true
+    }).addTo(map);
+  }, ()=>{
+    alert("현재 위치를 가져올 수 없습니다. GPS를 켜주세요.");
+  });
 }
 </script>
 </body>
