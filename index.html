@@ -2,130 +2,136 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>사건/순찰차 배치 시뮬레이션</title>
+<title>사건/순찰차 배치 및 길찾기</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
 <style>
   #map { height: 90vh; }
-  #controls { padding: 10px; }
+  #controls { padding: 10px; text-align:center; }
+  button, input { margin: 5px; padding: 6px 10px; font-size:14px; }
 </style>
 </head>
 <body>
+
 <div id="controls">
-  <button onclick="downloadJSON()">📥 JSON 저장</button>
-  <input type="file" id="fileInput" accept=".json">
+  <button onclick="setMode('incident')">📍 사건 위치 찍기</button>
+  <button onclick="setMode('patrol')">🚔 순찰차 위치 찍기</button>
+  <button onclick="downloadJSON()">💾 JSON 저장</button>
+  <input type="file" id="fileInput" accept=".json" />
+  <button onclick="selectPatrolForRouting()">🛣️ 길찾기 모드</button>
 </div>
 <div id="map"></div>
-<script>
-// 지도 초기화
-const map = L.map('map').setView([37.5665, 126.9780], 13);
 
-// 타일 레이어
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors'
+<script>
+let map = L.map('map').setView([37.5665, 126.9780], 13);
+
+// 타일
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom: 19
 }).addTo(map);
 
-// 아이콘 설정
-const patrolIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/296/296216.png", // 🚓
-  iconSize: [40, 40],
-  iconAnchor: [20, 40],
-  popupAnchor: [0, -35]
-});
-
+// 아이콘
 const incidentIcon = L.icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/463/463574.png", // ❗
-  iconSize: [35, 35],
-  iconAnchor: [17, 35],
-  popupAnchor: [0, -30]
+  iconUrl:"https://cdn-icons-png.flaticon.com/512/463/463574.png",
+  iconSize:[35,35],
+  iconAnchor:[17,35],
+  popupAnchor:[0,-30]
+});
+const patrolIcon = L.icon({
+  iconUrl:"https://cdn-icons-png.flaticon.com/512/296/296216.png",
+  iconSize:[40,40],
+  iconAnchor:[20,40],
+  popupAnchor:[0,-35]
 });
 
 // 상태
-let mode = "incident"; 
+let mode = "incident";
 let incidentMarker = null;
 let patrolMarkers = [];
+let routingControl = null;
 
-// 지도 클릭 이벤트
-map.on("click", function(e) {
-  if (mode === "incident") {
-    if (incidentMarker) map.removeLayer(incidentMarker);
-    incidentMarker = L.marker(e.latlng, {icon: incidentIcon})
-      .bindPopup("사건 위치")
-      .addTo(map);
-  } else if (mode === "patrol") {
-    let patrolNum = prompt("순찰차 번호를 입력하세요:", "101");
-    if (patrolNum) {
-      let marker = L.marker(e.latlng, {icon: patrolIcon})
-        .bindPopup("순찰차 " + patrolNum)
-        .addTo(map);
-      patrolMarkers.push({marker, num: patrolNum});
+// 모드 선택
+function setMode(m){
+  mode = m;
+  alert(m === 'incident' ? "사건 위치 클릭" : "순찰차 배치 클릭");
+}
+
+// 지도 클릭
+map.on('click', function(e){
+  if(mode === 'incident'){
+    if(incidentMarker) map.removeLayer(incidentMarker);
+    incidentMarker = L.marker(e.latlng, {icon: incidentIcon}).bindPopup("사건 위치").addTo(map);
+  }
+  else if(mode === 'patrol'){
+    let num = prompt("순찰차 번호 입력", "101");
+    if(num){
+      let marker = L.marker(e.latlng,{icon:patrolIcon}).bindPopup("순찰차 "+num).addTo(map);
+      patrolMarkers.push({marker,num});
     }
   }
 });
 
 // JSON 저장
-function downloadJSON() {
+function downloadJSON(){
   let data = {
     incident: incidentMarker ? incidentMarker.getLatLng() : null,
-    patrols: patrolMarkers.map(p => ({
-      latlng: p.marker.getLatLng(),
-      num: p.num
-    }))
+    patrols: patrolMarkers.map(p=>({num:p.num, latlng:p.marker.getLatLng()}))
   };
-  let blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
-  let url = URL.createObjectURL(blob);
+  let blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   let a = document.createElement("a");
-  a.href = url;
-  a.download = "map_data.json";
+  a.href = URL.createObjectURL(blob);
+  a.download = "locations.json";
   a.click();
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(a.href);
 }
 
 // JSON 불러오기
-document.getElementById("fileInput").addEventListener("change", function(evt) {
+document.getElementById('fileInput').addEventListener('change',function(evt){
   let file = evt.target.files[0];
-  if (!file) return;
+  if(!file) return;
   let reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = function(e){
     let data = JSON.parse(e.target.result);
 
-    // 기존 마커 초기화
-    if (incidentMarker) map.removeLayer(incidentMarker);
-    patrolMarkers.forEach(p => map.removeLayer(p.marker));
+    // 초기화
+    if(incidentMarker) map.removeLayer(incidentMarker);
+    patrolMarkers.forEach(p=>map.removeLayer(p.marker));
     patrolMarkers = [];
 
-    // 사건 위치 표시
-    if (data.incident) {
-      incidentMarker = L.marker(data.incident, {icon: incidentIcon})
-        .bindPopup("사건 위치")
-        .addTo(map);
+    if(data.incident){
+      incidentMarker = L.marker(data.incident,{icon:incidentIcon}).bindPopup("사건 위치").addTo(map);
     }
-
-    // 순찰차 표시
-    if (data.patrols) {
-      data.patrols.forEach(p => {
-        let marker = L.marker(p.latlng, {icon: patrolIcon})
-          .bindPopup("순찰차 " + p.num)
-          .addTo(map);
-        patrolMarkers.push({marker, num: p.num});
+    if(data.patrols){
+      data.patrols.forEach(p=>{
+        let m = L.marker(p.latlng,{icon:patrolIcon}).bindPopup("순찰차 "+p.num).addTo(map);
+        patrolMarkers.push({marker:m,num:p.num});
       });
     }
   };
   reader.readAsText(file);
 });
 
-// 키보드 단축키
-document.addEventListener("keydown", function(e) {
-  if (e.key === "1") {
-    mode = "incident";
-    alert("사건 위치 모드");
+// 순찰차 선택 후 길찾기
+function selectPatrolForRouting(){
+  if(!incidentMarker){
+    alert("먼저 사건 위치를 찍어주세요!");
+    return;
   }
-  if (e.key === "2") {
-    mode = "patrol";
-    alert("순찰차 배치 모드");
+  let patrolNum = prompt("길찾기할 순찰차 번호 입력:");
+  let p = patrolMarkers.find(x=>x.num===patrolNum);
+  if(!p){
+    alert("입력한 번호의 순찰차가 없습니다.");
+    return;
   }
-});
+  if(routingControl) map.removeControl(routingControl);
+  routingControl = L.Routing.control({
+    waypoints:[p.marker.getLatLng(), incidentMarker.getLatLng()],
+    routeWhileDragging:true
+  }).addTo(map);
+}
 </script>
 </body>
 </html>
