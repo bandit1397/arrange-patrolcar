@@ -33,11 +33,13 @@ let mode = null;
 let incidentMarkers = [];
 let carMarkers = [];
 
+// 📌 모드 설정
 function setMode(type){
   mode = type;
   alert(type === 'incident' ? "사건 위치를 지도에 클릭하세요." : "순찰차 위치를 지도에 클릭하세요.");
 }
 
+// 📌 지도 클릭 시 마커 추가
 map.on('click', function(e){
   if(!mode) return;
   
@@ -54,6 +56,7 @@ map.on('click', function(e){
   }
 });
 
+// 📌 JSON 다운로드
 function downloadJSON(){
   let data = {
     incidents: incidentMarkers.map(m => m.getLatLng()),
@@ -68,7 +71,7 @@ function downloadJSON(){
   URL.revokeObjectURL(url);
 }
 
-// 🔹 JSON 불러오기
+// 📌 JSON 수동 불러오기
 document.getElementById('fileInput').addEventListener('change', function(evt){
   let file = evt.target.files[0];
   if(!file) return;
@@ -81,6 +84,7 @@ document.getElementById('fileInput').addEventListener('change', function(evt){
   reader.readAsText(file);
 });
 
+// 📌 공통 로드 함수
 function loadLocations(data){
   // 기존 마커 제거
   incidentMarkers.forEach(m => map.removeLayer(m));
@@ -114,6 +118,19 @@ function loadLocations(data){
     map.fitBounds(group.getBounds().pad(0.3));
   }
 }
+
+// 📌 페이지 로딩 시 locations.json 자동 불러오기
+fetch('locations.json')
+  .then(response => {
+    if(!response.ok) throw new Error("파일 없음");
+    return response.json();
+  })
+  .then(data => {
+    loadLocations(data);
+  })
+  .catch(err => {
+    console.log("자동 불러오기 실패:", err.message);
+  });
 </script>
 </body>
 </html>
