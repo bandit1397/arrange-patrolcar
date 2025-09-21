@@ -1,159 +1,70 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>순찰차 배치 공유 시뮬레이션</title>
+<meta charset="utf-8" />
+<title>사건/순찰차 위치 저장 툴</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
-<link rel="stylesheet" href="css/style.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  body, html { margin:0; padding:0; height:100%; }
-  #map { width:100%; height:100%; }
-  .control-btn { position:absolute; top:10px; left:10px; z-index:1000; background:white; padding:5px; border-radius:5px; }
-  .control-btn button { margin:2px; }
+  body { margin:0; padding:0; }
+  #map { width:100%; height:90vh; }
+  #controls { padding:10px; text-align:center; }
+  button { margin: 5px; padding: 8px 12px; font-size:14px; }
 </style>
 </head>
 <body>
-
-<div id="map"></div>
-<div class="control-btn">
-  <button id="setIncident">사건 지점 지정</button>
-  <button id="addPatrol">순찰차 추가</button>
-  <button id="saveShare">배치 저장/공유</button>
+<div id="controls">
+  <button onclick="setMode('incident')">📍 사건 위치 찍기</button>
+  <button onclick="setMode('car')">🚔 순찰차 위치 찍기</button>
+  <button onclick="downloadJSON()">💾 JSON 다운로드</button>
 </div>
+<div id="map"></div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-<script src="js/main.js"></script>
 <script>
-// index.html 안에서도 바로 JS를 넣을 수 있습니다. 아래는 main.js 내용 예시
-
-// 지도 초기화
-const map = L.map('map').setView([37.523, 126.866], 16);
+let map = L.map('map').setView([37.5665, 126.9780], 13); // 서울시청 기준
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
+  maxZoom: 19
 }).addTo(map);
 
-// 상태 변수
-let incidentMarker = null;
-let patrolMarkers = [];
-let addingIncident = false;
-let addingPatrol = false;
-let currentRoute = null;
+let mode = null;
+let incidentMarkers = [];
+let carMarkers = [];
 
-// 버튼 이벤트
-document.getElementById('setIncident').onclick = () => {
-    addingIncident = true;
-    addingPatrol = false;
-    alert('지도에서 사건 지점을 클릭하세요.');
-};
+function setMode(type){
+  mode = type;
+  alert(type === 'incident' ? "사건 위치를 지도에 클릭하세요." : "순찰차 위치를 지도에 클릭하세요.");
+}
 
-document.getElementById('addPatrol').onclick = () => {
-    addingPatrol = true;
-    addingIncident = false;
-    alert('지도에서 순찰차 위치를 클릭하세요.');
-};
-
-document.getElementById('saveShare').onclick = () => {
-    if (!incidentMarker) { alert('먼저 사건 지점을 지정하세요.'); return; }
-    if (patrolMarkers.length === 0) { alert('순찰차를 최소 1대 이상 추가하세요.'); return; }
-
-    const data = {
-        incident: incidentMarker.getLatLng(),
-        patrols: patrolMarkers.map(p => ({id: p.id, lat: p.marker.getLatLng().lat, lng: p.marker.getLatLng().lng}))
-    };
-
-    const jsonStr = encodeURIComponent(JSON.stringify(data));
-    const shareUrl = `${window.location.href.split('?')[0]}?data=${jsonStr}`;
-    prompt('이 URL을 카카오톡으로 공유하세요:', shareUrl);
-};
-
-// 지도 클릭 이벤트
-map.on('click', function(e) {
-    if (addingIncident) {
-        if (incidentMarker) map.removeLayer(incidentMarker);
-        incidentMarker = L.marker(e.latlng, {icon: L.icon({iconUrl:'assets/icons/incident.png', iconSize:[32,32]})})
-            .addTo(map)
-            .bindPopup('사건 발생 지점')
-            .openPopup();
-        addingIncident = false;
-    } else if (addingPatrol) {
-        const patrolNumber = prompt('순찰차 번호를 입력하세요:');
-        if (!patrolNumber) return;
-
-        const marker = L.marker(e.latlng, {icon: L.icon({iconUrl:'assets/icons/patrol.png', iconSize:[32,32]})})
-            .addTo(map);
-
-        marker.bindPopup(`
-            순찰차 ${patrolNumber}<br>
-            <button onclick="routeToPatrol('${patrolNumber}')">길찾기</button>
-            <button onclick="removePatrol('${patrolNumber}')">삭제</button>
-        `);
-
-        patrolMarkers.push({id: patrolNumber, marker: marker});
-        addingPatrol = false;
-    }
+map.on('click', function(e){
+  if(!mode) return;
+  
+  let marker;
+  if(mode === 'incident'){
+    marker = L.marker(e.latlng, {draggable:true}).addTo(map).bindPopup("사건 위치");
+    incidentMarkers.push(marker);
+  } else if(mode === 'car'){
+    marker = L.marker(e.latlng, {draggable:true, icon: L.icon({
+      iconUrl: "https://cdn-icons-png.flaticon.com/512/68/68557.png",
+      iconSize: [32,32]
+    })}).addTo(map).bindPopup("순찰차 위치");
+    carMarkers.push(marker);
+  }
 });
 
-// URL 파라미터에서 데이터 로드
-function loadFromURL() {
-    const params = new URLSearchParams(window.location.search);
-    const dataStr = params.get('data');
-    if (!dataStr) return;
-    try {
-        const data = JSON.parse(decodeURIComponent(dataStr));
-        if (data.incident) {
-            incidentMarker = L.marker([data.incident.lat, data.incident.lng], {icon: L.icon({iconUrl:'assets/icons/incident.png', iconSize:[32,32]})})
-                .addTo(map)
-                .bindPopup('사건 발생 지점')
-                .openPopup();
-        }
-        if (data.patrols && data.patrols.length > 0) {
-            data.patrols.forEach(p => {
-                const marker = L.marker([p.lat, p.lng], {icon: L.icon({iconUrl:'assets/icons/patrol.png', iconSize:[32,32]})})
-                    .addTo(map);
-                marker.bindPopup(`
-                    순찰차 ${p.id}<br>
-                    <button onclick="routeToPatrol('${p.id}')">길찾기</button>
-                    <button onclick="removePatrol('${p.id}')">삭제</button>
-                `);
-                patrolMarkers.push({id: p.id, marker: marker});
-            });
-        }
-    } catch(e) {
-        console.error('URL 데이터 로드 실패', e);
-    }
+function downloadJSON(){
+  let data = {
+    incidents: incidentMarkers.map(m => m.getLatLng()),
+    cars: carMarkers.map(m => m.getLatLng())
+  };
+  let blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement("a");
+  a.href = url;
+  a.download = "locations.json";
+  a.click();
+  URL.revokeObjectURL(url);
 }
-
-// 순찰차 길찾기
-function routeToPatrol(id) {
-    const patrol = patrolMarkers.find(p => p.id === id);
-    if (!patrol) return;
-    if (!incidentMarker) { alert('사건 지점을 먼저 지정하세요.'); return; }
-    if (currentRoute) map.removeControl(currentRoute);
-    currentRoute = L.Routing.control({
-        waypoints: [
-            map.getCenter(),
-            patrol.marker.getLatLng()
-        ],
-        routeWhileDragging: false,
-        draggableWaypoints: false,
-        addWaypoints: false
-    }).addTo(map);
-}
-
-// 순찰차 삭제
-function removePatrol(id) {
-    const index = patrolMarkers.findIndex(p => p.id === id);
-    if (index !== -1) {
-        map.removeLayer(patrolMarkers[index].marker);
-        patrolMarkers.splice(index, 1);
-    }
-}
-
-// 초기 로드 시 URL 데이터 확인
-loadFromURL();
 </script>
 </body>
 </html>
