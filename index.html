@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>사건/순찰차 위치 저장 툴</title>
+<title>사건/순찰차 위치 저장 & 불러오기 툴</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -11,6 +11,7 @@
   #map { width:100%; height:90vh; }
   #controls { padding:10px; text-align:center; }
   button { margin: 5px; padding: 8px 12px; font-size:14px; }
+  input[type=file] { margin: 5px; }
 </style>
 </head>
 <body>
@@ -18,6 +19,7 @@
   <button onclick="setMode('incident')">📍 사건 위치 찍기</button>
   <button onclick="setMode('car')">🚔 순찰차 위치 찍기</button>
   <button onclick="downloadJSON()">💾 JSON 다운로드</button>
+  <input type="file" id="fileInput" accept=".json" />
 </div>
 <div id="map"></div>
 
@@ -64,6 +66,53 @@ function downloadJSON(){
   a.download = "locations.json";
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// 🔹 JSON 불러오기
+document.getElementById('fileInput').addEventListener('change', function(evt){
+  let file = evt.target.files[0];
+  if(!file) return;
+
+  let reader = new FileReader();
+  reader.onload = function(e){
+    let data = JSON.parse(e.target.result);
+    loadLocations(data);
+  };
+  reader.readAsText(file);
+});
+
+function loadLocations(data){
+  // 기존 마커 제거
+  incidentMarkers.forEach(m => map.removeLayer(m));
+  carMarkers.forEach(m => map.removeLayer(m));
+  incidentMarkers = [];
+  carMarkers = [];
+
+  // 사건 위치 로드
+  if(data.incidents){
+    data.incidents.forEach(loc => {
+      let marker = L.marker(loc, {draggable:true}).addTo(map).bindPopup("사건 위치");
+      incidentMarkers.push(marker);
+    });
+  }
+
+  // 순찰차 위치 로드
+  if(data.cars){
+    data.cars.forEach(loc => {
+      let marker = L.marker(loc, {draggable:true, icon: L.icon({
+        iconUrl: "https://cdn-icons-png.flaticon.com/512/68/68557.png",
+        iconSize: [32,32]
+      })}).addTo(map).bindPopup("순찰차 위치");
+      carMarkers.push(marker);
+    });
+  }
+
+  // 지도의 중심을 사건/순찰차 위치 평균으로 맞춤
+  let all = [...incidentMarkers, ...carMarkers];
+  if(all.length > 0){
+    let group = L.featureGroup(all);
+    map.fitBounds(group.getBounds().pad(0.3));
+  }
 }
 </script>
 </body>
