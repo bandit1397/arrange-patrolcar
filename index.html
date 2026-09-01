@@ -30,21 +30,32 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   }
 
-  /* 입력 패널 (지도 위에 겹쳐서 표시, 접으면 전체 지도가 보임) */
+  /* 입력 패널 (지도 위 중앙에 카드로 표시, 접으면 전체 지도가 보임) */
   #controls {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    max-height: 55vh;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50vw;
+    min-width: 320px;
+    max-width: 620px;
+    max-height: 82vh;
     overflow-y: auto;
     background: rgba(245,245,245,0.97);
-    padding: 10px 10px 14px;
+    padding: 14px 18px 18px;
+    border-radius: 14px;
     z-index: 1000;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
-    transition: transform 0.2s ease;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    transition: opacity 0.2s ease, transform 0.2s ease;
   }
-  body.panel-hidden #controls { transform: translateY(-110%); }
+  body.panel-hidden #controls {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+  @media (max-width: 720px) {
+    #controls { width: 92vw; max-width: none; }
+  }
 
   .section { margin: 6px 0 10px; }
   .section h3 {
