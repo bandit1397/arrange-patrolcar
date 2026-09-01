@@ -78,6 +78,8 @@
     background: #fff;
   }
   #scenarioDesc { font-size: 13px; color:#555; margin: 6px 2px 0; }
+  .hint { font-size: 12px; color:#666; margin: 6px 2px 0; }
+  .patrol-popup button { padding: 6px 8px; font-size: 13px; margin-top: 4px; }
   input[type=file] { flex: 1 1 100%; padding: 6px; font-size: 14px; }
 
   /* 순찰차 이름 라벨 */
@@ -110,10 +112,12 @@
   <div class="section">
     <h3>👮 팀장 수동 지정 (현장에서 새로 지정)</h3>
     <div class="row">
-      <button onclick="setMode('patrol')">🚔 순찰차 추가/이동</button>
+      <button onclick="setMode('patrol')">🚔 순찰차 추가</button>
+      <button id="dragBtn" onclick="toggleDrag()">🔓 순찰차 드래그 이동</button>
       <button onclick="resetSinglePatrol()">🗑️ 지정 순찰차 제거</button>
       <button onclick="resetPatrols()">🗑️ 순찰차 전체 초기화</button>
     </div>
+    <p class="hint">순찰차 아이콘을 클릭하면 이름변경·제거할 수 있습니다. '드래그 이동'을 켜면 아이콘을 끌어서 위치를 옮깁니다.</p>
   </div>
 
   <div class="section">
@@ -163,9 +167,11 @@ const patrolIcon = L.icon({
 // 상태
 let mode = null;
 let incidentMarker = null;
-let patrolMarkers = [];   // { marker, name }
+let patrolMarkers = [];   // { marker, name, id }
 let routingControl = null;
 let scenarios = [];
+let patrolSeq = 0;
+let patrolsDraggable = false;
 
 /* ---------- 패널 열고닫기 ---------- */
 function togglePanel(){
@@ -239,12 +245,29 @@ function normalizePatrol(p){
   return { name, lat, lng };
 }
 
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function patrolPopupHtml(p){
+  return '<div class="patrol-popup">순찰차 <b>' + escapeHtml(p.name) + '</b><br>' +
+    '<button onclick="renamePatrol(' + p.id + ')">✏️ 이름변경</button> ' +
+    '<button onclick="removePatrol(' + p.id + ')">🗑️ 제거</button></div>';
+}
+
+function refreshPatrol(p){
+  p.marker.setPopupContent(patrolPopupHtml(p));
+  p.marker.setTooltipContent(p.name);
+}
+
 function addPatrol(name, latlng){
-  const m = L.marker(latlng, {icon: patrolIcon})
-    .bindPopup("순찰차 " + name)
+  const id = ++patrolSeq;
+  const m = L.marker(latlng, {icon: patrolIcon, draggable: patrolsDraggable})
     .bindTooltip(name, {permanent:true, direction:'top', className:'patrol-label', offset:[0,-18]})
     .addTo(map);
-  patrolMarkers.push({ marker:m, name });
+  const p = { marker:m, name, id };
+  m.bindPopup(patrolPopupHtml(p));
+  patrolMarkers.push(p);
   return m;
 }
 
@@ -252,6 +275,30 @@ function moveOrAddPatrol(name, latlng){
   const p = patrolMarkers.find(x => x.name === name);
   if(p){ p.marker.setLatLng(latlng); }
   else { addPatrol(name, latlng); }
+}
+
+function renamePatrol(id){
+  const p = patrolMarkers.find(x => x.id === id);
+  if(!p) return;
+  const nn = prompt("새 순찰차 이름 입력:", p.name);
+  if(nn && nn.trim()){ p.name = nn.trim(); refreshPatrol(p); }
+}
+
+function removePatrol(id){
+  const p = patrolMarkers.find(x => x.id === id);
+  if(!p) return;
+  map.removeLayer(p.marker);
+  patrolMarkers = patrolMarkers.filter(x => x.id !== id);
+}
+
+function toggleDrag(){
+  patrolsDraggable = !patrolsDraggable;
+  patrolMarkers.forEach(p => {
+    if(patrolsDraggable) p.marker.dragging.enable();
+    else p.marker.dragging.disable();
+  });
+  document.getElementById('dragBtn').textContent =
+    patrolsDraggable ? '🔒 순찰차 드래그 잠금' : '🔓 순찰차 드래그 이동';
 }
 
 function clearPatrols(){
