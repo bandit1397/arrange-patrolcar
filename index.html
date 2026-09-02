@@ -153,13 +153,18 @@
     <select id="scenarioSelect" onchange="showScenarioDesc()"></select>
     <div id="scenarioDesc"></div>
     <button class="primary" onclick="runScenario()">🚨 선택한 사건 열기 / 긴급배치 실행</button>
-    <p class="hint">사건을 연 뒤 사건 위치·순찰차를 옮기고 아래 <b>변경사항 저장</b>을 누르면, 다음에 그 사건을 열 때 옮겨진 상태로 나타납니다.</p>
+    <p class="hint">사건을 연 뒤 사건 위치·순찰차를 옮기고 아래 <b>변경사항 저장</b>을 누르면, 다음에 그 사건을 열 때 옮겨진 상태로 나타납니다. 깃허브 토큰을 설정하면 저장 시 자동으로 깃허브에도 반영됩니다.</p>
     <div class="row">
       <button onclick="saveCurrentAsScenario()">➕ 현재 지도배치를 새 사건으로 저장</button>
       <button onclick="updateSelectedScenario()">💾 선택한 사건에 변경사항 저장</button>
       <button onclick="renameSelectedScenario()">✏️ 선택한 사건 이름·설명 수정</button>
       <button onclick="deleteSelectedScenario()">🗑️ 선택한 사건 삭제 / 원본복구</button>
     </div>
+    <div class="row">
+      <button onclick="commitScenariosToGitHub(false)">☁️ 깃허브에 저장(수동)</button>
+      <button onclick="setGhToken()">🔑 깃허브 토큰 설정</button>
+    </div>
+    <div id="ghStatus" class="hint"></div>
     <div class="row">
       <button onclick="exportScenarios()">📤 사건목록 내보내기(JSON)</button>
       <button onclick="document.getElementById('scenarioImport').click()">📥 사건목록 가져오기(JSON)</button>
@@ -293,7 +298,12 @@ document.addEventListener('DOMContentLoaded', () => requestAnimationFrame(center
    다른 기기/브라우저로 옮기려면 '사건목록 내보내기/가져오기'를 사용한다. */
 const LS_CUSTOM = 'patrolcar_customScenarios_v1';
 const LS_OVERRIDE = 'patrolcar_scenarioOverrides_v1';
+const LS_TOKEN = 'patrolcar_ghToken_v1';
+const LS_SYNCED = 'patrolcar_syncedScenarios_v1';
 let baseScenarios = [];   // scenarios.json 원본
+
+// 깃허브 자동저장 대상 (이 저장소의 scenarios.json)
+const GH = { owner: 'bandit1397', repo: 'arrange-patrolcar', branch: 'main', path: 'scenarios.json' };
 
 function lsGet(key, fallback){
   try { const v = JSON.parse(localStorage.getItem(key)); return v == null ? fallback : v; }
@@ -309,16 +319,123 @@ function loadOverrides(){ return lsGet(LS_OVERRIDE, {}); }
 function saveOverrides(o){ lsSet(LS_OVERRIDE, o); }
 function isCustomId(id){ return loadCustom().some(c => c.id === id); }
 
+/* ---------- 깃허브 저장 ---------- */
+function ghToken(){ return localStorage.getItem(LS_TOKEN) || ""; }
+
+function canonicalScenario(s){
+  return {
+    id: s.id,
+    label: s.label || "",
+    description: s.description || "",
+    type: s.type || 'all',
+    incident: s.incident ? { lat: s.incident.lat, lng: s.incident.lng } : null,
+    patrols: (s.patrols || []).map(p => ({ name: String(p.name), lat: p.lat, lng: p.lng }))
+  };
+}
+function canonicalList(list){ return JSON.stringify((list || []).map(canonicalScenario)); }
+
+function scenariosFileContent(){
+  return JSON.stringify({ scenarios: scenarios.map(canonicalScenario) }, null, 2) + "\n";
+}
+
+function b64utf8(str){ return btoa(unescape(encodeURIComponent(str))); }
+
+function updateGhStatus(){
+  const el = document.getElementById('ghStatus');
+  if(!el) return;
+  if(!ghToken()){
+    el.textContent = "깃허브 토큰: 미설정 (저장 시 이 브라우저에만 보관됩니다)";
+    return;
+  }
+  const pending = canonicalList(scenarios) !== lsGet(LS_SYNCED, null);
+  el.textContent = pending
+    ? "깃허브 토큰: 설정됨 · ⏳ 아직 깃허브에 반영되지 않은 변경사항이 있습니다"
+    : "깃허브 토큰: 설정됨 · ✅ 깃허브와 동기화됨";
+}
+
+function setGhToken(){
+  const has = !!ghToken();
+  const t = prompt(
+    "GitHub Fine-grained 토큰 (Contents: Read and write, 저장소: " + GH.repo + ").\n" +
+    (has ? "저장된 토큰이 있습니다. 새 값을 넣으면 교체, 비우고 확인하면 삭제." : "토큰이 없으면 깃허브 자동저장이 꺼집니다."),
+    ""
+  );
+  if(t === null) return;
+  if(t.trim() === ""){
+    if(has && confirm("저장된 깃허브 토큰을 삭제할까요?")){
+      localStorage.removeItem(LS_TOKEN);
+      alert("토큰이 삭제되었습니다.");
+    }
+  } else {
+    localStorage.setItem(LS_TOKEN, t.trim());
+    alert("토큰이 저장되었습니다. 이제 사건을 저장하면 깃허브에도 자동 반영됩니다.");
+  }
+  updateGhStatus();
+}
+
+// silent=true 면 알림 없이 성공여부(boolean)만 반환
+async function commitScenariosToGitHub(silent){
+  const token = ghToken();
+  if(!token){
+    if(!silent) alert("먼저 '🔑 깃허브 토큰 설정'에서 토큰을 입력하세요.");
+    return false;
+  }
+  const api = "https://api.github.com/repos/" + GH.owner + "/" + GH.repo + "/contents/" + GH.path;
+  const headers = { "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json" };
+  try {
+    let sha;
+    const getRes = await fetch(api + "?ref=" + GH.branch, { headers, cache: "no-store" });
+    if(getRes.ok){ sha = (await getRes.json()).sha; }
+    else if(getRes.status === 401 || getRes.status === 403){ throw new Error("토큰 권한 오류 (" + getRes.status + ")"); }
+    else if(getRes.status !== 404){ throw new Error("파일 조회 실패 (" + getRes.status + ")"); }
+
+    const body = {
+      message: "사건별 긴급배치 업데이트 (" + new Date().toLocaleString("ko-KR") + ")",
+      content: b64utf8(scenariosFileContent()),
+      branch: GH.branch
+    };
+    if(sha) body.sha = sha;
+
+    const putRes = await fetch(api, { method: "PUT", headers, body: JSON.stringify(body) });
+    if(!putRes.ok){
+      const e = await putRes.json().catch(() => ({}));
+      throw new Error(e.message || ("HTTP " + putRes.status));
+    }
+    lsSet(LS_SYNCED, canonicalList(scenarios));
+    updateGhStatus();
+    if(!silent) alert("깃허브에 저장되었습니다.\n사이트(모든 기기) 반영까지 1~3분 걸립니다.");
+    return true;
+  } catch(err){
+    updateGhStatus();
+    if(!silent) alert("깃허브 저장 실패: " + err.message + "\n(변경사항은 이 브라우저에 저장되어 있습니다.)");
+    return false;
+  }
+}
+
+// 로컬 저장 완료 후 호출: 토큰이 있으면 깃허브에도 반영
+function finishSave(localMsg){
+  if(!ghToken()){ alert(localMsg); return; }
+  commitScenariosToGitHub(true).then(ok => {
+    alert(localMsg + (ok
+      ? "\n\n☁️ 깃허브에도 저장했습니다. 다른 기기 반영까지 1~3분."
+      : "\n\n⚠️ 깃허브 저장은 실패했습니다. '☁️ 깃허브에 저장(수동)'으로 다시 시도하세요."));
+  });
+}
+
 function rebuildScenarios(keepId){
   const sel = document.getElementById('scenarioSelect');
   const prev = keepId != null ? keepId
              : (scenarios[sel.value] ? scenarios[sel.value].id : null);
   const overrides = loadOverrides();
+  const baseIds = new Set(baseScenarios.map(b => b.id));
   const merged = baseScenarios.map(s => {
     const o = overrides[s.id];
     return o ? Object.assign({}, s, o, { id: s.id, _modified: true }) : s;
   });
-  loadCustom().forEach(c => merged.push(Object.assign({}, c, { _custom: true })));
+  // 기본 목록에 이미 같은 id가 있으면(= 깃허브에 반영 완료) 중복 추가하지 않음
+  loadCustom().forEach(c => {
+    if(!baseIds.has(c.id)) merged.push(Object.assign({}, c, { _custom: true }));
+  });
   scenarios = merged;
 
   sel.innerHTML = "";
@@ -332,6 +449,7 @@ function rebuildScenarios(keepId){
   const idx = scenarios.findIndex(s => s.id === prev);
   sel.value = idx >= 0 ? idx : 0;
   showScenarioDesc();
+  updateGhStatus();
 }
 
 function selectedScenario(){
@@ -342,6 +460,13 @@ fetch("scenarios.json")
   .then(res => res.json())
   .then(data => {
     baseScenarios = data.scenarios || [];
+    // 지난번 깃허브 저장분이 배포에 반영되었으면, 로컬 임시본은 정리한다
+    const synced = lsGet(LS_SYNCED, null);
+    if(synced && canonicalList(baseScenarios) === synced){
+      localStorage.removeItem(LS_CUSTOM);
+      localStorage.removeItem(LS_OVERRIDE);
+      localStorage.removeItem(LS_SYNCED);
+    }
     rebuildScenarios();
     if(!document.getElementById('controls').style.width) centerPanel();
   })
@@ -404,7 +529,7 @@ function saveCurrentAsScenario(){
   });
   saveCustom(custom);
   rebuildScenarios(id);
-  alert("새 사건으로 저장되었습니다: " + label.trim());
+  finishSave("새 사건으로 저장되었습니다: " + label.trim());
 }
 
 /* ---------- 선택한 사건에 변경사항 저장 ---------- */
@@ -432,7 +557,7 @@ function updateSelectedScenario(){
     saveOverrides(overrides);
   }
   rebuildScenarios(s.id);
-  alert("'" + (s.label || s.id) + "' 사건이 현재 지도배치로 저장되었습니다.\n다음에 이 사건을 열면 변경된 상태로 나타납니다.");
+  finishSave("'" + (s.label || s.id) + "' 사건이 현재 지도배치로 저장되었습니다.\n다음에 이 사건을 열면 변경된 상태로 나타납니다.");
 }
 
 /* ---------- 선택한 사건 이름·설명 수정 ---------- */
@@ -459,7 +584,7 @@ function renameSelectedScenario(){
     saveOverrides(overrides);
   }
   rebuildScenarios(s.id);
-  alert("수정되었습니다.");
+  finishSave("수정되었습니다.");
 }
 
 /* ---------- 선택한 사건 삭제 / 원본복구 ---------- */
@@ -471,7 +596,7 @@ function deleteSelectedScenario(){
     if(!confirm("'" + (s.label || s.id) + "' 사건을 삭제할까요?")) return;
     saveCustom(loadCustom().filter(c => c.id !== s.id));
     rebuildScenarios();
-    alert("삭제되었습니다.");
+    finishSave("삭제되었습니다.");
   } else {
     const overrides = loadOverrides();
     if(!overrides[s.id]){ alert("기본 사건은 삭제할 수 없습니다. (수정된 사건만 원본복구 가능)"); return; }
@@ -479,7 +604,7 @@ function deleteSelectedScenario(){
     delete overrides[s.id];
     saveOverrides(overrides);
     rebuildScenarios(s.id);
-    alert("원본 상태로 되돌렸습니다.");
+    finishSave("원본 상태로 되돌렸습니다.");
   }
 }
 
@@ -534,7 +659,7 @@ document.getElementById('scenarioImport').addEventListener('change', function(ev
     saveOverrides(overrides);
     saveCustom(custom);
     rebuildScenarios();
-    alert("가져오기 완료.");
+    finishSave("가져오기 완료.");
   };
   reader.readAsText(file);
 });
