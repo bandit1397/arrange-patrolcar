@@ -149,10 +149,22 @@
   </div>
 
   <div class="section">
-    <h3>🚨 사건별 긴급배치 (미리 정해진 배치)</h3>
+    <h3>🚨 사건별 긴급배치</h3>
     <select id="scenarioSelect" onchange="showScenarioDesc()"></select>
     <div id="scenarioDesc"></div>
-    <button class="primary" onclick="runScenario()">🚨 선택한 사건으로 긴급배치 실행</button>
+    <button class="primary" onclick="runScenario()">🚨 선택한 사건 열기 / 긴급배치 실행</button>
+    <p class="hint">사건을 연 뒤 사건 위치·순찰차를 옮기고 아래 <b>변경사항 저장</b>을 누르면, 다음에 그 사건을 열 때 옮겨진 상태로 나타납니다.</p>
+    <div class="row">
+      <button onclick="saveCurrentAsScenario()">➕ 현재 지도배치를 새 사건으로 저장</button>
+      <button onclick="updateSelectedScenario()">💾 선택한 사건에 변경사항 저장</button>
+      <button onclick="renameSelectedScenario()">✏️ 선택한 사건 이름·설명 수정</button>
+      <button onclick="deleteSelectedScenario()">🗑️ 선택한 사건 삭제 / 원본복구</button>
+    </div>
+    <div class="row">
+      <button onclick="exportScenarios()">📤 사건목록 내보내기(JSON)</button>
+      <button onclick="document.getElementById('scenarioImport').click()">📥 사건목록 가져오기(JSON)</button>
+    </div>
+    <input type="file" id="scenarioImport" accept=".json" style="display:none" />
   </div>
 
   <div class="section">
@@ -273,42 +285,259 @@ document.addEventListener('DOMContentLoaded', () => requestAnimationFrame(center
   handle.addEventListener('pointercancel', () => { dragging = false; });
 })();
 
-/* ---------- 시나리오(미리 정해진 배치) ---------- */
+/* ---------- 시나리오(사건별 긴급배치) ----------
+   scenarios.json = 기본(배포에 포함된) 사건 목록.
+   사용자가 새로 만들거나 위치를 옮겨 저장한 내용은 이 브라우저의 localStorage 에 남는다.
+     - patrolcar_customScenarios : 사용자가 새로 추가한 사건들(배열)
+     - patrolcar_scenarioOverrides : 기본 사건을 수정한 내용(기본사건 id -> 덮어쓸 값)
+   다른 기기/브라우저로 옮기려면 '사건목록 내보내기/가져오기'를 사용한다. */
+const LS_CUSTOM = 'patrolcar_customScenarios_v1';
+const LS_OVERRIDE = 'patrolcar_scenarioOverrides_v1';
+let baseScenarios = [];   // scenarios.json 원본
+
+function lsGet(key, fallback){
+  try { const v = JSON.parse(localStorage.getItem(key)); return v == null ? fallback : v; }
+  catch(e){ return fallback; }
+}
+function lsSet(key, val){
+  try { localStorage.setItem(key, JSON.stringify(val)); }
+  catch(e){ alert("브라우저 저장공간에 쓸 수 없습니다: " + e.message); }
+}
+function loadCustom(){ return lsGet(LS_CUSTOM, []); }
+function saveCustom(a){ lsSet(LS_CUSTOM, a); }
+function loadOverrides(){ return lsGet(LS_OVERRIDE, {}); }
+function saveOverrides(o){ lsSet(LS_OVERRIDE, o); }
+function isCustomId(id){ return loadCustom().some(c => c.id === id); }
+
+function rebuildScenarios(keepId){
+  const sel = document.getElementById('scenarioSelect');
+  const prev = keepId != null ? keepId
+             : (scenarios[sel.value] ? scenarios[sel.value].id : null);
+  const overrides = loadOverrides();
+  const merged = baseScenarios.map(s => {
+    const o = overrides[s.id];
+    return o ? Object.assign({}, s, o, { id: s.id, _modified: true }) : s;
+  });
+  loadCustom().forEach(c => merged.push(Object.assign({}, c, { _custom: true })));
+  scenarios = merged;
+
+  sel.innerHTML = "";
+  scenarios.forEach((s, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    let tag = s._custom ? " ★새사건" : (s._modified ? " ✎수정됨" : "");
+    opt.textContent = (s.label || s.id || ("시나리오 " + (i+1))) + tag;
+    sel.appendChild(opt);
+  });
+  const idx = scenarios.findIndex(s => s.id === prev);
+  sel.value = idx >= 0 ? idx : 0;
+  showScenarioDesc();
+}
+
+function selectedScenario(){
+  return scenarios[document.getElementById('scenarioSelect').value] || null;
+}
+
 fetch("scenarios.json")
   .then(res => res.json())
   .then(data => {
-    scenarios = data.scenarios || [];
-    const sel = document.getElementById('scenarioSelect');
-    sel.innerHTML = "";
-    scenarios.forEach((s, i) => {
-      const opt = document.createElement('option');
-      opt.value = i;
-      opt.textContent = s.label || s.id || ("시나리오 " + (i+1));
-      sel.appendChild(opt);
-    });
-    showScenarioDesc();
-    if(!document.getElementById('controls').style.width) centerPanel(); // 사용자가 아직 리사이즈/드래그하지 않았다면 크기 변화에 맞춰 재정렬
+    baseScenarios = data.scenarios || [];
+    rebuildScenarios();
+    if(!document.getElementById('controls').style.width) centerPanel();
   })
   .catch(err => {
     console.log("scenarios.json 로드 실패:", err);
-    document.getElementById('scenarioDesc').textContent = "시나리오 파일을 불러오지 못했습니다.";
+    baseScenarios = [];
+    rebuildScenarios();
+    document.getElementById('scenarioDesc').textContent =
+      "기본 시나리오 파일을 불러오지 못했습니다. 저장된 사건만 표시됩니다.";
   });
 
 function showScenarioDesc(){
-  const sel = document.getElementById('scenarioSelect');
-  const s = scenarios[sel.value];
+  const s = selectedScenario();
   if(!s){ document.getElementById('scenarioDesc').textContent = ""; return; }
   const typeText = s.type === 'partial' ? "지정 순찰차만 배치" : "관내 전체 순찰차 이동배치";
+  let src = s._custom ? "새로 저장한 사건" : (s._modified ? "기본 사건(수정됨)" : "기본 사건");
   document.getElementById('scenarioDesc').textContent =
-    "[" + typeText + "] " + (s.description || "");
+    "[" + typeText + " · " + src + "] " + (s.description || "");
 }
 
 function runScenario(){
-  const sel = document.getElementById('scenarioSelect');
-  const s = scenarios[sel.value];
-  if(!s){ alert("선택된 사건 시나리오가 없습니다."); return; }
+  const s = selectedScenario();
+  if(!s){ alert("선택된 사건이 없습니다."); return; }
   applyScenario(s);
 }
+
+/* ---------- 현재 지도상태 스냅샷 ---------- */
+function snapshotCurrent(){
+  return {
+    incident: incidentMarker
+      ? { lat: incidentMarker.getLatLng().lat, lng: incidentMarker.getLatLng().lng }
+      : null,
+    patrols: patrolMarkers.map(p => ({
+      name: p.name,
+      lat: p.marker.getLatLng().lat,
+      lng: p.marker.getLatLng().lng
+    }))
+  };
+}
+
+/* ---------- 현재 배치를 새 사건으로 저장 ---------- */
+function saveCurrentAsScenario(){
+  if(prompt("비밀번호를 입력하세요:") !== PASSWORD){ alert("비밀번호가 틀렸습니다."); return; }
+  const snap = snapshotCurrent();
+  if(!snap.incident && snap.patrols.length === 0){
+    alert("지도에 저장할 사건 위치나 순찰차가 없습니다."); return;
+  }
+  const label = prompt("새 사건 이름 (목록에 표시됩니다):", "");
+  if(!label || !label.trim()) return;
+  const description = prompt("사건 설명 (선택):", "") || "";
+  const custom = loadCustom();
+  const id = 'custom_' + Date.now();
+  custom.push({
+    id: id,
+    label: label.trim(),
+    description: description.trim(),
+    type: 'all',
+    incident: snap.incident,
+    patrols: snap.patrols
+  });
+  saveCustom(custom);
+  rebuildScenarios(id);
+  alert("새 사건으로 저장되었습니다: " + label.trim());
+}
+
+/* ---------- 선택한 사건에 변경사항 저장 ---------- */
+function updateSelectedScenario(){
+  const s = selectedScenario();
+  if(!s){ alert("선택된 사건이 없습니다."); return; }
+  if(prompt("비밀번호를 입력하세요:") !== PASSWORD){ alert("비밀번호가 틀렸습니다."); return; }
+  const snap = snapshotCurrent();
+  if(!snap.incident && snap.patrols.length === 0){
+    if(!confirm("현재 지도에 사건 위치·순찰차가 없습니다. 빈 배치로 저장할까요?")) return;
+  }
+  if(isCustomId(s.id)){
+    const custom = loadCustom();
+    const idx = custom.findIndex(c => c.id === s.id);
+    custom[idx] = Object.assign({}, custom[idx], {
+      incident: snap.incident, patrols: snap.patrols
+    });
+    saveCustom(custom);
+  } else {
+    const overrides = loadOverrides();
+    overrides[s.id] = Object.assign({}, overrides[s.id], {
+      label: s.label, description: s.description, type: s.type,
+      incident: snap.incident, patrols: snap.patrols
+    });
+    saveOverrides(overrides);
+  }
+  rebuildScenarios(s.id);
+  alert("'" + (s.label || s.id) + "' 사건이 현재 지도배치로 저장되었습니다.\n다음에 이 사건을 열면 변경된 상태로 나타납니다.");
+}
+
+/* ---------- 선택한 사건 이름·설명 수정 ---------- */
+function renameSelectedScenario(){
+  const s = selectedScenario();
+  if(!s){ alert("선택된 사건이 없습니다."); return; }
+  if(prompt("비밀번호를 입력하세요:") !== PASSWORD){ alert("비밀번호가 틀렸습니다."); return; }
+  const label = prompt("사건 이름:", s.label || "");
+  if(label == null) return;
+  const description = prompt("사건 설명:", s.description || "");
+  if(description == null) return;
+  if(isCustomId(s.id)){
+    const custom = loadCustom();
+    const idx = custom.findIndex(c => c.id === s.id);
+    custom[idx].label = label.trim() || custom[idx].label;
+    custom[idx].description = description.trim();
+    saveCustom(custom);
+  } else {
+    const overrides = loadOverrides();
+    const cur = overrides[s.id] || {};
+    overrides[s.id] = Object.assign({
+      type: s.type, incident: s.incident, patrols: s.patrols
+    }, cur, { label: label.trim() || s.label, description: description.trim() });
+    saveOverrides(overrides);
+  }
+  rebuildScenarios(s.id);
+  alert("수정되었습니다.");
+}
+
+/* ---------- 선택한 사건 삭제 / 원본복구 ---------- */
+function deleteSelectedScenario(){
+  const s = selectedScenario();
+  if(!s){ alert("선택된 사건이 없습니다."); return; }
+  if(prompt("비밀번호를 입력하세요:") !== PASSWORD){ alert("비밀번호가 틀렸습니다."); return; }
+  if(isCustomId(s.id)){
+    if(!confirm("'" + (s.label || s.id) + "' 사건을 삭제할까요?")) return;
+    saveCustom(loadCustom().filter(c => c.id !== s.id));
+    rebuildScenarios();
+    alert("삭제되었습니다.");
+  } else {
+    const overrides = loadOverrides();
+    if(!overrides[s.id]){ alert("기본 사건은 삭제할 수 없습니다. (수정된 사건만 원본복구 가능)"); return; }
+    if(!confirm("'" + (s.label || s.id) + "' 사건의 변경사항을 지우고 기본(원본) 상태로 되돌릴까요?")) return;
+    delete overrides[s.id];
+    saveOverrides(overrides);
+    rebuildScenarios(s.id);
+    alert("원본 상태로 되돌렸습니다.");
+  }
+}
+
+/* ---------- 사건목록 내보내기 / 가져오기 ---------- */
+function exportScenarios(){
+  const out = { scenarios: scenarios.map(s => ({
+    id: s.id, label: s.label, description: s.description || "",
+    type: s.type || 'all', incident: s.incident || null, patrols: s.patrols || []
+  })) };
+  const blob = new Blob([JSON.stringify(out, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "scenarios.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+document.getElementById('scenarioImport').addEventListener('change', function(evt){
+  const file = evt.target.files[0];
+  evt.target.value = "";
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    let data;
+    try { data = JSON.parse(e.target.result); }
+    catch(err){ alert("JSON 형식이 올바르지 않습니다."); return; }
+    const list = Array.isArray(data) ? data : (data.scenarios || []);
+    if(!list.length){ alert("사건 목록을 찾을 수 없습니다."); return; }
+    if(!confirm(list.length + "개의 사건을 가져옵니다.\n같은 이름/ID의 기본 사건은 수정본으로, 그 외에는 새 사건으로 추가됩니다.")) return;
+    const baseById = {}; baseScenarios.forEach(b => { baseById[b.id] = true; });
+    const baseByLabel = {}; baseScenarios.forEach(b => { baseByLabel[b.label] = b.id; });
+    const overrides = loadOverrides();
+    const custom = loadCustom();
+    list.forEach(s => {
+      const item = {
+        label: s.label || s.id || "가져온 사건",
+        description: s.description || "",
+        type: s.type || 'all',
+        incident: s.incident || null,
+        patrols: (s.patrols || []).map(normalizePatrol)
+          .filter(p => p.lat != null && p.lng != null)
+      };
+      const baseId = baseById[s.id] ? s.id : baseByLabel[s.label];
+      if(baseId){
+        overrides[baseId] = item;
+      } else {
+        const existing = custom.find(c => c.id === s.id || c.label === item.label);
+        if(existing){ Object.assign(existing, item); }
+        else { custom.push(Object.assign({ id: s.id || ('custom_' + Date.now() + '_' + Math.random().toString(36).slice(2,6)) }, item)); }
+      }
+    });
+    saveOverrides(overrides);
+    saveCustom(custom);
+    rebuildScenarios();
+    alert("가져오기 완료.");
+  };
+  reader.readAsText(file);
+});
 
 function applyScenario(s){
   const patrols = (s.patrols || []).map(normalizePatrol).filter(p => p.lat != null && p.lng != null);
