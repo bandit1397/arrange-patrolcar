@@ -153,22 +153,33 @@
     <select id="scenarioSelect" onchange="showScenarioDesc()"></select>
     <div id="scenarioDesc"></div>
     <button class="primary" onclick="runScenario()">🚨 선택한 사건 열기 / 긴급배치 실행</button>
-    <p class="hint">사건을 연 뒤 사건 위치·순찰차를 옮기고 아래 <b>변경사항 저장</b>을 누르면, 다음에 그 사건을 열 때 옮겨진 상태로 나타납니다. 깃허브 토큰을 설정하면 저장 시 자동으로 깃허브에도 반영됩니다.</p>
+    <p class="hint">사건을 연 뒤 사건 위치·순찰차를 옮기고 아래 <b>변경사항 저장</b>을 누르면, 다음에 그 사건을 열 때 옮겨진 상태로 나타납니다. (우선 이 브라우저에 저장됩니다)</p>
     <div class="row">
       <button onclick="saveCurrentAsScenario()">➕ 현재 지도배치를 새 사건으로 저장</button>
       <button onclick="updateSelectedScenario()">💾 선택한 사건에 변경사항 저장</button>
       <button onclick="renameSelectedScenario()">✏️ 선택한 사건 이름·설명 수정</button>
-      <button onclick="deleteSelectedScenario()">🗑️ 선택한 사건 삭제 / 원본복구</button>
+      <button onclick="deleteSelectedScenario()">🗑️ 선택한 사건 삭제 / 제거</button>
     </div>
-    <div class="row">
-      <button onclick="commitScenariosToGitHub(false)">☁️ 깃허브에 저장(수동)</button>
-      <button onclick="setGhToken()">🔑 깃허브 토큰 설정</button>
-    </div>
+
+    <h3 style="margin-top:14px">📤 모든 기기에 반영 (깃허브 scenarios.json 갱신)</h3>
     <div id="ghStatus" class="hint"></div>
     <div class="row">
-      <button onclick="exportScenarios()">📤 사건목록 내보내기(JSON)</button>
-      <button onclick="document.getElementById('scenarioImport').click()">📥 사건목록 가져오기(JSON)</button>
+      <button class="primary" onclick="copyScenariosJson()">📋 scenarios.json 전체 복사</button>
+      <button onclick="openGitHubEditor()">📝 깃허브 파일 편집 열기</button>
     </div>
+    <p class="hint">① <b>복사</b> → ② <b>편집 열기</b> → 깃허브 편집기에서 전체선택(Ctrl+A) 후 붙여넣기(Ctrl+V) → 아래 <b>Commit changes</b>. 1~3분 뒤 모든 기기에 반영됩니다.</p>
+    <div class="row">
+      <button onclick="exportScenarios()">💾 파일로 내보내기(JSON)</button>
+      <button onclick="document.getElementById('scenarioImport').click()">📥 파일 가져오기(JSON)</button>
+    </div>
+    <details style="margin-top:8px">
+      <summary class="hint" style="cursor:pointer">⚙️ 고급: 토큰으로 자동 커밋 설정</summary>
+      <div class="row" style="margin-top:6px">
+        <button onclick="setGhToken()">🔑 깃허브 토큰 설정</button>
+        <button onclick="commitScenariosToGitHub(false)">☁️ 지금 깃허브에 커밋</button>
+      </div>
+      <p class="hint">토큰(Fine-grained PAT, Contents 권한)을 넣어두면 사건을 저장할 때 자동으로 깃허브에 커밋됩니다. 토큰은 이 브라우저에만 저장되니 저장소를 비공개로 두는 것을 권장합니다.</p>
+    </details>
     <input type="file" id="scenarioImport" accept=".json" style="display:none" />
   </div>
 
@@ -291,15 +302,17 @@ document.addEventListener('DOMContentLoaded', () => requestAnimationFrame(center
 })();
 
 /* ---------- 시나리오(사건별 긴급배치) ----------
-   scenarios.json = 기본(배포에 포함된) 사건 목록.
-   사용자가 새로 만들거나 위치를 옮겨 저장한 내용은 이 브라우저의 localStorage 에 남는다.
+   scenarios.json = 기본(배포에 포함된) 사건 목록. 화면 목록 = scenarios.json + 아래 localStorage 를 병합한 것.
      - patrolcar_customScenarios : 사용자가 새로 추가한 사건들(배열)
      - patrolcar_scenarioOverrides : 기본 사건을 수정한 내용(기본사건 id -> 덮어쓸 값)
-   다른 기기/브라우저로 옮기려면 '사건목록 내보내기/가져오기'를 사용한다. */
+     - patrolcar_removedBase     : 목록에서 뺀 기본 사건 id 배열
+   모든 기기에 반영하려면 '📋 scenarios.json 전체 복사' 후 깃허브 편집기에 붙여넣어 커밋한다.
+   (또는 토큰을 넣어 자동 커밋). 커밋이 배포에 반영되면 reconcileLocal() 이 로컬 임시본을 자동 정리한다. */
 const LS_CUSTOM = 'patrolcar_customScenarios_v1';
 const LS_OVERRIDE = 'patrolcar_scenarioOverrides_v1';
+const LS_REMOVED = 'patrolcar_removedBase_v1';   // 기본 사건 중 목록에서 뺀 id 배열
 const LS_TOKEN = 'patrolcar_ghToken_v1';
-const LS_SYNCED = 'patrolcar_syncedScenarios_v1';
+const LS_LASTCOMMIT = 'patrolcar_lastCommit_v1';
 let baseScenarios = [];   // scenarios.json 원본
 
 // 깃허브 자동저장 대상 (이 저장소의 scenarios.json)
@@ -317,7 +330,38 @@ function loadCustom(){ return lsGet(LS_CUSTOM, []); }
 function saveCustom(a){ lsSet(LS_CUSTOM, a); }
 function loadOverrides(){ return lsGet(LS_OVERRIDE, {}); }
 function saveOverrides(o){ lsSet(LS_OVERRIDE, o); }
+function loadRemoved(){ return lsGet(LS_REMOVED, []); }
+function saveRemoved(a){ lsSet(LS_REMOVED, a); }
 function isCustomId(id){ return loadCustom().some(c => c.id === id); }
+
+// 아직 깃허브(scenarios.json)에 반영되지 않은 로컬 변경이 있는가
+function hasLocalEdits(){
+  return loadCustom().length > 0
+      || Object.keys(loadOverrides()).length > 0
+      || loadRemoved().length > 0;
+}
+
+/* 배포된 scenarios.json 이 이미 로컬 변경분을 담고 있으면, 그 로컬 임시본을 정리한다.
+   (깃허브 자동저장이든 수동 붙여넣기든, 커밋이 반영되면 저절로 깨끗해진다) */
+function reconcileLocal(){
+  const baseJson = {};
+  baseScenarios.forEach(b => { baseJson[b.id] = JSON.stringify(canonicalScenario(b)); });
+
+  saveCustom(loadCustom().filter(c => {
+    return baseJson[c.id] !== JSON.stringify(canonicalScenario(c));
+  }));
+
+  const ov = loadOverrides();
+  Object.keys(ov).forEach(id => {
+    const base = baseScenarios.find(b => b.id === id);
+    if(!base){ delete ov[id]; return; }  // 기본에서 사라진 사건의 수정본은 의미 없음
+    const merged = Object.assign({}, base, ov[id], { id });
+    if(baseJson[id] === JSON.stringify(canonicalScenario(merged))) delete ov[id];
+  });
+  saveOverrides(ov);
+
+  saveRemoved(loadRemoved().filter(id => baseScenarios.some(b => b.id === id)));
+}
 
 /* ---------- 깃허브 저장 ---------- */
 function ghToken(){ return localStorage.getItem(LS_TOKEN) || ""; }
@@ -332,8 +376,6 @@ function canonicalScenario(s){
     patrols: (s.patrols || []).map(p => ({ name: String(p.name), lat: p.lat, lng: p.lng }))
   };
 }
-function canonicalList(list){ return JSON.stringify((list || []).map(canonicalScenario)); }
-
 function scenariosFileContent(){
   return JSON.stringify({ scenarios: scenarios.map(canonicalScenario) }, null, 2) + "\n";
 }
@@ -343,14 +385,42 @@ function b64utf8(str){ return btoa(unescape(encodeURIComponent(str))); }
 function updateGhStatus(){
   const el = document.getElementById('ghStatus');
   if(!el) return;
-  if(!ghToken()){
-    el.textContent = "깃허브 토큰: 미설정 (저장 시 이 브라우저에만 보관됩니다)";
-    return;
+  const pending = hasLocalEdits();
+  const recentCommit = Date.now() - (lsGet(LS_LASTCOMMIT, 0) || 0) < 10 * 60 * 1000;
+  if(!pending){
+    el.textContent = "✅ 현재 목록이 깃허브 scenarios.json 과 같습니다.";
+  } else if(recentCommit){
+    el.textContent = "☁️ 깃허브에 커밋했습니다. 사이트(모든 기기) 반영까지 1~3분. 반영되면 이 표시가 사라집니다.";
+  } else {
+    el.textContent = "⏳ 이 브라우저에만 저장된 변경사항이 있습니다. 아래 '깃허브에 반영' 방법으로 올리세요.";
   }
-  const pending = canonicalList(scenarios) !== lsGet(LS_SYNCED, null);
-  el.textContent = pending
-    ? "깃허브 토큰: 설정됨 · ⏳ 아직 깃허브에 반영되지 않은 변경사항이 있습니다"
-    : "깃허브 토큰: 설정됨 · ✅ 깃허브와 동기화됨";
+}
+
+/* ---------- 수동 반영: scenarios.json 내용 복사 + 편집화면 열기 ---------- */
+async function copyScenariosJson(){
+  const text = scenariosFileContent();
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    copied = true;
+  } catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:0;top:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    try { copied = document.execCommand('copy'); } catch(e2){}
+    ta.remove();
+  }
+  if(copied){
+    alert("scenarios.json 전체 내용을 복사했습니다.\n\n1) '📝 깃허브 파일 편집 열기' 클릭\n2) 편집기에서 전체 선택(Ctrl+A) 후 붙여넣기(Ctrl+V)\n3) 아래 'Commit changes' 클릭\n\n→ 1~3분 뒤 모든 기기에 반영됩니다.");
+  } else {
+    alert("자동 복사가 안 됩니다. '📤 사건목록 내보내기(JSON)'로 파일을 받아 깃허브에 올리세요.");
+  }
+}
+
+function openGitHubEditor(){
+  window.open("https://github.com/" + GH.owner + "/" + GH.repo + "/edit/" + GH.branch + "/" + GH.path, "_blank");
 }
 
 function setGhToken(){
@@ -401,7 +471,7 @@ async function commitScenariosToGitHub(silent){
       const e = await putRes.json().catch(() => ({}));
       throw new Error(e.message || ("HTTP " + putRes.status));
     }
-    lsSet(LS_SYNCED, canonicalList(scenarios));
+    lsSet(LS_LASTCOMMIT, Date.now());
     updateGhStatus();
     if(!silent) alert("깃허브에 저장되었습니다.\n사이트(모든 기기) 반영까지 1~3분 걸립니다.");
     return true;
@@ -412,13 +482,16 @@ async function commitScenariosToGitHub(silent){
   }
 }
 
-// 로컬 저장 완료 후 호출: 토큰이 있으면 깃허브에도 반영
+// 로컬 저장 완료 후 호출: 토큰이 있으면 깃허브 자동커밋, 없으면 수동반영 안내
 function finishSave(localMsg){
-  if(!ghToken()){ alert(localMsg); return; }
+  if(!ghToken()){
+    alert(localMsg + "\n\n(이 브라우저에만 저장됨. 모든 기기에 반영하려면 아래 '📋 scenarios.json 복사' → '📝 깃허브 파일 편집 열기'에 붙여넣고 커밋하세요.)");
+    return;
+  }
   commitScenariosToGitHub(true).then(ok => {
     alert(localMsg + (ok
       ? "\n\n☁️ 깃허브에도 저장했습니다. 다른 기기 반영까지 1~3분."
-      : "\n\n⚠️ 깃허브 저장은 실패했습니다. '☁️ 깃허브에 저장(수동)'으로 다시 시도하세요."));
+      : "\n\n⚠️ 깃허브 자동저장 실패. '📋 scenarios.json 복사' 후 깃허브에 직접 붙여넣어 커밋하세요."));
   });
 }
 
@@ -427,8 +500,9 @@ function rebuildScenarios(keepId){
   const prev = keepId != null ? keepId
              : (scenarios[sel.value] ? scenarios[sel.value].id : null);
   const overrides = loadOverrides();
+  const removed = new Set(loadRemoved());
   const baseIds = new Set(baseScenarios.map(b => b.id));
-  const merged = baseScenarios.map(s => {
+  const merged = baseScenarios.filter(s => !removed.has(s.id)).map(s => {
     const o = overrides[s.id];
     return o ? Object.assign({}, s, o, { id: s.id, _modified: true }) : s;
   });
@@ -460,13 +534,7 @@ fetch("scenarios.json")
   .then(res => res.json())
   .then(data => {
     baseScenarios = data.scenarios || [];
-    // 지난번 깃허브 저장분이 배포에 반영되었으면, 로컬 임시본은 정리한다
-    const synced = lsGet(LS_SYNCED, null);
-    if(synced && canonicalList(baseScenarios) === synced){
-      localStorage.removeItem(LS_CUSTOM);
-      localStorage.removeItem(LS_OVERRIDE);
-      localStorage.removeItem(LS_SYNCED);
-    }
+    reconcileLocal();   // 커밋이 배포에 반영된 로컬 임시본은 자동 정리
     rebuildScenarios();
     if(!document.getElementById('controls').style.width) centerPanel();
   })
@@ -599,12 +667,24 @@ function deleteSelectedScenario(){
     finishSave("삭제되었습니다.");
   } else {
     const overrides = loadOverrides();
-    if(!overrides[s.id]){ alert("기본 사건은 삭제할 수 없습니다. (수정된 사건만 원본복구 가능)"); return; }
-    if(!confirm("'" + (s.label || s.id) + "' 사건의 변경사항을 지우고 기본(원본) 상태로 되돌릴까요?")) return;
-    delete overrides[s.id];
-    saveOverrides(overrides);
-    rebuildScenarios(s.id);
-    finishSave("원본 상태로 되돌렸습니다.");
+    const modified = !!overrides[s.id];
+    const ans = prompt(
+      "'" + (s.label || s.id) + "' 은(는) 기본 목록(scenarios.json)의 사건입니다.\n\n" +
+      "1 = 목록에서 완전히 제거\n" +
+      (modified ? "2 = 수정 취소하고 원본 상태로 복구\n" : "") +
+      "\n번호를 입력하세요 (취소하려면 빈칸):", "");
+    if(ans === "1"){
+      const rm = loadRemoved();
+      if(!rm.includes(s.id)){ rm.push(s.id); saveRemoved(rm); }
+      if(modified){ delete overrides[s.id]; saveOverrides(overrides); }
+      rebuildScenarios();
+      finishSave("'" + (s.label || s.id) + "' 사건을 목록에서 제거했습니다.");
+    } else if(ans === "2" && modified){
+      delete overrides[s.id];
+      saveOverrides(overrides);
+      rebuildScenarios(s.id);
+      finishSave("원본 상태로 되돌렸습니다.");
+    }
   }
 }
 
